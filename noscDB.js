@@ -99,9 +99,32 @@ function _dirExists(dir_path,callback){
         });
     }
 };
-function _dirExistsNoChecks(){
-
+function _dirExistsNoChecks(dir_path,callback){
+    fs.mkdir(dir_path,function(er){
+        if(er){
+            fs.writeFile(dir_path+dirr_test,"",function(err){
+                if(err){
+                    callback(false);
+                    return;
+                }
+                callback(true);
+            });
+            return;
+        }
+        fs.rmdir(dir_path,function(){
+            callback(false);
+        });
+    });
 }
+function _check4dirNoChecks(dir_path,callback){
+    fs.readdir(dir_path,"utf8",function(er,files){
+        if(er){
+            callback(false);
+            return;
+        }
+        callback(true);
+    });
+};
 //To check if a file exists
 /**
  * 
@@ -204,7 +227,9 @@ function fAble(s){
   An object with noscDB table creation properties. 
 
 
-  ---
+
+
+  
  ** Object Properties:
  * @param o.tablename The name of the table to be created 
  * . 
@@ -222,15 +247,17 @@ function fAble(s){
  * . 
  
   ---
-  NOTE:
+  ** *NOTE:
 
-  **A tablename or a table column-name can only include lowercase letters and numbers.*  
+  A tablename or a table column-name can only include lowercase letters and numbers.*  
   
-  **A tablename or a table column-name must always begin with a letter.* 
-
-   ---
+  A tablename or a table column-name must always begin with a letter.
+   
  */
 function _table(o){
+    if(typeof (o.callback)==="function"){
+        o.callback=o.callback.bind(this);
+    }
     if(typeof (o)==="object"&&!Array.isArray(o)&&null!==o){
         if(string(o.tablename,o.columns)){
             o.tablename=o.tablename.toLowerCase();
@@ -252,7 +279,9 @@ function _table(o){
                                         this.TABLES[o.tablename]={columns:o.columns.split(","),storage:store};
                                     }
                                     log("Table named: ("+o.tablename+") is created...");
-                                    if(typeof (o.callback)==="function"){o.callback();}
+                                    if(typeof (o.callback)==="function"){
+                                        o.callback();
+                                    }
                                 }else{
                                     log("Table named: ("+o.tablename+") is already created...");
                                 }
@@ -266,14 +295,22 @@ function _table(o){
                                             Err("System Error: Can't create table...");
                                             return;
                                         }
-                                        var store;
-                                        if(typeof (o.storage)!=="boolean"){store=true;}else{store=o.storage;}
-                                        Databases[_path].tablesObject[o.tablename]={columns:o.columns.split(","),storage:store};
-                                        if(Tables){
-                                            Tables[o.tablename]={columns:o.columns.split(","),storage:store};
-                                        }
-                                        log("Table named: ("+o.tablename+") is created...",this);
-                                        if(typeof (o.callback)==="function"){o.callback();}
+                                       // _dirExistss(_path+"/"+o.tablename+"/r",true,function(ext){
+                                            
+                                            _recreateDir(_path+"/"+o.tablename,["r","t"],0,function(ext){
+                                            
+                                                var store;
+                                                if(typeof (o.storage)!=="boolean"){store=true;}else{store=o.storage;}
+                                                Databases[_path].tablesObject[o.tablename]={columns:o.columns.split(","),storage:store};
+                                                if(Tables){
+                                                    Tables[o.tablename]={columns:o.columns.split(","),storage:store};
+                                                }
+                                                log("Table named: ("+o.tablename+") is created...",this);
+                                                if(typeof (o.callback)==="function"){
+                                                    o.callback();
+                                                }
+                                            });
+                                       // });
                                     });
                                 }else{
                                     log("Table named: ("+o.tablename+") is already created...",this);
@@ -288,6 +325,152 @@ function _table(o){
         }
     };
 };
+/**
+  * 
+  * @param {string} mainID 
+  * @param {string} tempID 
+  * @param {(noscDBReturnType:boolean)=>void} callback 
+  */
+ function _setTemporalID(tablename,mainID,tempID,callback){
+    if(string(tablename,mainID,tempID)&&typeof (callback)==="function"){
+        callback = callback.bind(this);
+        var _path="-/*\\.\\/+";
+        if(typeof (this[""])==="function"){_path=this[""]();}
+        if(Databases[_path]){
+            if(Databases[_path].tablesObject[tablename]){
+                let main=resolveName(mainID),temp=resolveName(tempID);
+                fs.readFile(_path+"/"+tablename+"/r/"+main+"/tmp"+db_EXT,"utf8",function(error,data){
+                    if(error){
+                        fs.writeFile(_path+"/"+tablename+"/r/"+main+"/tmp"+db_EXT,temp,function(err){
+                            if(err){
+                                log("Could'nt set temporalID for "+mainID);
+                                callback(false);
+                                return;
+                            }
+                            fs.writeFile(_path+"/"+tablename+"/t/t"+temp+db_EXT,mainID,function(er){
+                                if(er){
+                                    log("Could'nt set temporalID for "+mainID);
+                                    callback(false);
+                                    return;
+                                }
+                                callback(true);
+                            });
+                        });
+                        return;
+                    }
+                    fs.rename(_path+"/"+tablename+"/t/t"+data+db_EXT,_path+"/"+tablename+"/t/t"+temp+db_EXT,function(e){
+                        if(e){
+                            log("Could'nt set temporalID for "+mainID);
+                            callback(false);
+                            return;
+                        }
+                        fs.writeFile(_path+"/"+tablename+"/r/"+main+"/tmp"+db_EXT,temp,function(errs){
+                            if(errs){}
+                            callback(true);
+                        });
+                    });
+                });
+            }
+        }
+    }
+ };
+ /**
+  * 
+  * @param {string} tablename 
+  * @param {string} tempID 
+  * @param {(noscDBReturnType:string)=>void} callback 
+  * A callback function which is passed a string of the data retrived as argument on sucessful operation. 
+  * Null is passed as argument if operation was unsucessful.
+  */
+ function _getMainID(tablename,tempID,callback){
+    if(string(tablename,tempID)&&typeof (callback)==="function"){
+        callback = callback.bind(this);
+        var _path="-/*\\.\\/+";
+        if(typeof (this[""])==="function"){_path=this[""]();}
+        if(Databases[_path]){
+            if(Databases[_path].tablesObject[tablename]){
+                fs.readFile(_path+"/"+tablename+"/t/t"+resolveName(tempID)+db_EXT,"utf8",function(er,data){
+                    if(er){
+                        log("Could'nt retrieve mainID for "+tempID);
+                        callback(null);
+                        return;
+                    }
+                    callback(data);
+                });
+            }
+        }
+    }
+ };
+  /**
+  * 
+  * @param {string} tablename 
+  * @param {string} mainID 
+  * @param {(noscDBReturnType:string)=>void} callback 
+  * A callback function which is passed a string of the data retrived as argument on sucessful operation. 
+  * Null is passed as argument if operation was unsucessful.
+  */
+ function _getTemporalID(tablename,mainID,callback){
+    if(string(tablename,tempID)&&typeof (callback)==="function"){
+        callback = callback.bind(this);
+        var _path="-/*\\.\\/+";
+        if(typeof (this[""])==="function"){_path=this[""]();}
+        if(Databases[_path]){
+            if(Databases[_path].tablesObject[tablename]){
+                fs.readFile(_path+"/"+tablename+"/r/"+resolveName(mainID)+"/tmp"+db_EXT,"utf8",function(er,data){
+                    if(er){
+                        log("Could'nt retrieve temporalID for "+mainID);
+                        callback(null);
+                        return;
+                    }
+                    callback(data);
+                });
+            }
+        }
+    }
+ };
+ /**
+  * 
+  * @param {string} tablename 
+  * @param {string} oldID 
+  * @param {string} newID 
+  * @param {(noscDBReturnType:boolean)} callback 
+  */
+ function _changeID(tablename,oldID,newID,callback){
+    if(string(tablename,oldID,newID)&&typeof (callback)==="function"){
+        callback = callback.bind(this);
+        var _path="-/*\\.\\/+";
+        if(typeof (this[""])==="function"){_path=this[""]();}
+        if(Databases[_path]){
+            if(Databases[_path].tablesObject[tablename]){
+                _check4dirNoChecks(_path+"/"+tablename+"/r/"+resolveName(oldID),function(exists){
+                    if(!exists){
+                        log("Could'nt change ID for "+oldID);
+                        callback(false);
+                        return;
+                    }
+                    let main = resolveName(newID);
+                    fs.rename(_path+"/"+tablename+"/r/"+resolveName(oldID),_path+"/"+tablename+"/r/"+main,function(err){
+                        if(err){
+                            log("Could'nt change ID for "+oldID);
+                            callback(false);
+                            return;
+                        }
+                        fs.readFile(_path+"/"+tablename+"/r/"+main+"/tmp"+db_EXT,"utf8",function(error,data){
+                            if(error){
+                                callback(true);
+                                return;
+                            }
+                            fs.writeFile(_path+"/"+tablename+"/r/"+main+"t/t"+data+db_EXT,main,function(er){
+                                if(er){}
+                                callback(true);
+                            });
+                        });
+                    });
+                });
+            }
+        }
+    }
+ };
 /**
  * 
  * @param {string} s Must be string
@@ -420,13 +603,16 @@ function _createRo(tablename,id,callback){
 
  */
 function _createRow(tablename,id,callback){
+    if(typeof (callback)==="function"){
+        callback = callback.bind(this);
+    }
     if(string(tablename,id)){
         var _path="-/*\\.\\/+";
         if(typeof (this[""])==="function"){_path=this[""]();}
         if(Databases[_path].tablesObject[tablename]){
-            id=id.toLowerCase();
-            if(_column(id)){
-                _createDir(_path+"/"+tablename+"/"+id,function(res){
+            id=resolveName(id);
+            //if(_column(id)){
+                _createDir(_path+"/"+tablename+"/r/"+id,function(res){
                     if(typeof (res)==="string"){
                         log("System Error: Couldn't create row for ("+id+")");
                         callback(false);
@@ -438,7 +624,7 @@ function _createRow(tablename,id,callback){
                             for(i in Databases[_path].tablesObject[tablename].columns){
                                 s+=Databases[_path].tablesObject[tablename].columns[i]+":null,";
                             }
-                            fs.writeFile(_path+"/"+tablename+"/"+id+"/row"+db_EXT,s,function(err){
+                            fs.writeFile(_path+"/"+tablename+"/r/"+id+"/row"+db_EXT,s,function(err){
                                 if(err){}
                                 callback(true);
                             });
@@ -446,9 +632,9 @@ function _createRow(tablename,id,callback){
                         }
                     }
                 });
-            }else{
+           /* }else{
                 log("Can't create row with unaccepted ("+id+") @"+tablename);
-            }
+            }*/
         }else{
             log("Can't create row. No such table ("+tablename+") exists...");
         }
@@ -468,15 +654,18 @@ function _createRow(tablename,id,callback){
  *  
  */
 function _updateRow(tablename,id,columnsObject,callback){
+    if(typeof (callback)==="function"){
+        callback = callback.bind(this);
+    }
     if(string(tablename,id)&&typeof (columnsObject)==="object"&&!Array.isArray(columnsObject)&&null!==columnsObject){
         var _path="-/*\\.\\/+";
         if(typeof (this[""])==="function"){_path=this[""]();}
         if(Databases[_path].tablesObject[tablename]){
-            id=id.toLowerCase();
-            if(_column(id)){
-                fs.readFile(_path+"/"+tablename+"/"+id+"/row"+db_EXT,"utf8",function(err,data){
+            id=resolveName(id);
+            //if(_column(id)){
+                fs.readFile(_path+"/"+tablename+"/r/"+id+"/row"+db_EXT,"utf8",function(err,data){
                     if(err){
-                        log("System Error: Couldn't update database... Ref: '"+_path+"/"+tablename+"/"+id+"/row"+db_EXT+"'");
+                        log("System Error: Couldn't update database... Ref: '"+_path+"/"+tablename+"/r/"+id+"/row"+db_EXT+"'");
                         if(typeof (callback)==="function"){callback(false);}
                         return;
                     }
@@ -502,9 +691,9 @@ function _updateRow(tablename,id,columnsObject,callback){
                     Data=null;
                     updatingCols=null;
                     updated=null;
-                    fs.writeFile(_path+"/"+tablename+"/"+id+"/row"+db_EXT,s,function(er){
+                    fs.writeFile(_path+"/"+tablename+"/r/"+id+"/row"+db_EXT,s,function(er){
                         if(er){
-                            log("System Error: Couldn;t update database... Ref: '"+_path+"/"+tablename+"/"+id+"/row"+db_EXT+"'");
+                            log("System Error: Couldn;t update database... Ref: '"+_path+"/"+tablename+"/r/"+id+"/row"+db_EXT+"'");
                             if(typeof (callback)==="function"){callback(false);}
                             return;
                         }
@@ -513,7 +702,7 @@ function _updateRow(tablename,id,columnsObject,callback){
                     });
                     s=null;
                 });
-            }
+            //}
         }
     }
 };
@@ -578,18 +767,21 @@ function _updateRow(tablename,id,columnsObject,callback){
  * 
  * @param {string} tablename 
  * @param {string} id 
- * @param {(noscDBReturnType: boolean)=>void} callback 
+ * @param {(noscDBReturnType: {})=>void} callback 
  */
  function _getRow(tablename,id,callback){
+    if(typeof (callback)==="function"){
+        callback = callback.bind(this);
+    }
     if(string(tablename,id)&&typeof (callback)==="function"){
         var _path="-/*\\.\\/+";
         if(typeof (this[""])==="function"){_path=this[""]();}
         if(Databases[_path].tablesObject[tablename]){
-            id=id.toLowerCase();
-            if(_column(id)){
-                fs.readFile(_path+"/"+tablename+"/"+id+"/row"+db_EXT,"utf8",function(err,data){
+            id=resolveName(id);
+           // if(_column(id)){
+                fs.readFile(_path+"/"+tablename+"/r/"+id+"/row"+db_EXT,"utf8",function(err,data){
                     if(err){
-                        log("System Error: Couldn't retrieve data... Ref: '"+_path+"/"+tablename+"/"+id+"/row"+db_EXT+"'");
+                        log("System Error: Couldn't retrieve data... Ref: '"+_path+"/"+tablename+"/r/"+id+"/row"+db_EXT+"'");
                         callback(null);
                         return;
                     }
@@ -598,7 +790,7 @@ function _updateRow(tablename,id,columnsObject,callback){
                     callback(func());
                     func=null;
                 });
-            }
+            //}
         }
     }
 };
@@ -685,19 +877,19 @@ function _getAllRows(tablename){
         allRowsOnEndTracker.push([1,0]);
         allRowsOnEndCallbacks.push(null);
         allRowsCallCount+=1;
-        fs.readdir(_path+"/"+tablename,function(err,f){
+        fs.readdir(_path+"/"+tablename+"/r",function(err,f){
             if(err){return}
             var i;
             if(ondataFuncs.length>0&&f.length>0){
                 var enderString="";
                 allRowsOnEndTracker[id][1]=f.length+1;
                 for(i in f){
-                    if(_column(f[i])){
+                    if(!/[^0-9a-z]/.test(f[i])/*_column(f[i])*/){
                        if(!ender){
                            enderString=f[i];
                            ender=true;
                        }else{
-                            _allRowsOnData(_path+"/"+tablename+"/"+f[i],ondataFuncs.slice(),id);
+                            _allRowsOnData(_path+"/"+tablename+"/r/"+f[i],ondataFuncs.slice(),id);
                        }
                     }else{
                         allRowsOnEndTracker[id][0]+=1;
@@ -706,7 +898,7 @@ function _getAllRows(tablename){
                 if(ender){
                     onendFuncs.unshift(function(){acceptOnEndFuncs=false;onendFuncs=null;});
                     allRowsOnEndCallbacks[id]=onendFuncs;
-                    _allRowsOnData(_path+"/"+tablename+"/"+enderString,ondataFuncs.slice(),id);
+                    _allRowsOnData(_path+"/"+tablename+"/r/"+enderString,ondataFuncs.slice(),id);
                     ondataFuncs=null;acceptOnDataFuncs=false;
                 }else{
                     acceptOnDataFuncs=false;
@@ -732,6 +924,7 @@ function _getAllRows(tablename){
                 onendFuncs=null;
             }
         });
+        let THIS=this;
         return {
             /**
              * 
@@ -747,6 +940,7 @@ function _getAllRows(tablename){
              */
             ondata:function(callback){
                 if(typeof (callback)==="function"&&acceptOnDataFuncs){
+                    callback = callback.bind(THIS);
                     ondataFuncs.push(callback);
                 }
                 return this;
@@ -764,6 +958,7 @@ function _getAllRows(tablename){
              */
             onend:function(callback){
                 if(typeof (callback)==="function"&&acceptOnEndFuncs){
+                    callback = callback.bind(THIS);
                     onendFuncs.push(callback);
                 }
                 return this;
@@ -788,6 +983,31 @@ function toString(item){
         }
     }
 };
+function createRelation(id1,id2){
+    if(string(id1,id2)){
+        let arr = [id1,id2].sort();
+        return arr[0]+arr[1];
+    }
+};
+function resolveName(name){
+    if(string(name)&&""!==name){
+        if(/[^0-9a-zA-Z]/.test(name)){
+            var i,s="m";
+            for(i in name){
+                if(/[^0-9a-zA-Z]/.test(name[i])){
+                    s+=name[i].charCodeAt(0)+"";
+                }else{
+                    s+=name[i];
+                }
+            };
+            return s.toLowerCase();
+        }else{
+            return name.toLowerCase();
+        }
+    };
+    return "?|\\/*.\\/";
+ };
+ 
 function _reupdateCol(keys,values){
 
 };
@@ -909,10 +1129,15 @@ function setAsyncDBObject(database_path,callback){
                     getRow:_getRow,
                     getAllRows:_getAllRows,
                     createRow:_createRow,
-                    createTable:_table
+                    createTable:_table,
+                    setTemporalID:_setTemporalID,
+                    getMainID:_getMainID,
+                    getTemporalID:_getTemporalID,
+                    changeID:_changeID
                 };
                 DBobject[""]=function(){return database_path;};
                 log("Database created... PATH: '"+database_path+"'");
+                callback=callback.bind(DBobject);//Added the binding of DBobject to the "this object" of the callback
                 callback(DBobject);
             });
         }else{
@@ -940,11 +1165,18 @@ function getSyncDBObject(database_path,callback){
                     getRow:_getRow,
                     getAllRows:_getAllRows,
                     createRow:_createRow,
-                    createTable:_table
+                    createTable:_table,
+                    setTemporalID:_setTemporalID,
+                    getMainID:_getMainID,
+                    getTemporalID:_getTemporalID,
+                    changeID:_changeID
                 };
                 DBobject[""]=function(){return dataPath;};
                 log("Database created... PATH: '"+database_path+"'");
-                if(typeof (callback)==="function"){callback(DBobject);};
+                if(typeof (callback)==="function"){
+                    callback=callback.bind(DBobject);//Added the binding of DBobject to the "this object" of the callback
+                    callback(DBobject);
+                };
                 return DBobject;
             }else{
                 Err("No such directory exists. Ref: "+[database_path]);
